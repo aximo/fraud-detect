@@ -1,0 +1,12 @@
+ali:
+  key: # ENV
+  secret: # ENV
+  mns:
+    address: https://1198583349505734.mns.cn-shanghai.aliyuncs.com
+  log:
+    endpoint: cn-shanghai.log.aliyuncs.com
+
+spring:
+  redis:
+    host: r-uf67zu1150j32w6ttupd.redis.rds.aliyuncs.com
+    password: # ENV should be override in env

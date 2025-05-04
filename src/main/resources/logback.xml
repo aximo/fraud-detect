@@ -1,0 +1,49 @@
+<configuration>
+    <!-- add this for avoid lost log data in memory -->
+    <shutdownHook class="ch.qos.logback.core.hook.DelayingShutdownHook"/>
+    <springProperty name="ali.log.endpoint" source="ali.log.endpoint"/>
+    <property name="ALI_ACCESS_KEY" value="${ALI_KEY}"/>
+    <property name="ALI_ACCESS_SECRET" value="${ALI_SECRET}"/>
+    <appender name="ali-log-appender" class="com.aliyun.openservices.log.logback.LoghubAppender">
+        <endpoint>${ali.log.endpoint}</endpoint>
+        <accessKeyId>${ALI_KEY}</accessKeyId>
+        <accessKeySecret>${ALI_SECRET}</accessKeySecret>
+        <project>fraud-detect</project>
+        <logStore>app-logs</logStore>
+
+        <!-- 可选项 详见 '参数说明'-->
+        <totalSizeInBytes>104857600</totalSizeInBytes>
+        <maxBlockMs>60000</maxBlockMs>
+        <ioThreadCount>8</ioThreadCount>
+        <batchSizeThresholdInBytes>524288</batchSizeThresholdInBytes>
+        <batchCountThreshold>4096</batchCountThreshold>
+        <lingerMs>2000</lingerMs>
+        <retries>10</retries>
+        <baseRetryBackoffMs>100</baseRetryBackoffMs>
+        <maxRetryBackoffMs>100</maxRetryBackoffMs>
+
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter"><!-- 打印WARN,ERROR级别的日志 -->
+            <level>INFO</level>
+        </filter>
+    </appender>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <!-- encoders are assigned the type ch.qos.logback.classic.encoder.PatternLayoutEncoder
+            by default -->
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger - %msg %X{THREAD_ID} %n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 可用来获取StatusManager中的状态 -->
+    <statusListener class="ch.qos.logback.core.status.OnConsoleStatusListener"/>
+
+    <!-- 解决debug模式下循环发送的问题 -->
+    <logger name="org.apache.http.impl.conn.Wire" level="WARN" />
+
+    <root>
+        <level value="INFO"/>
+        <appender-ref ref="ali-log-appender"/>
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>

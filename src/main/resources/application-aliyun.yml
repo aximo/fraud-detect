@@ -1,0 +1,8 @@
+ali:
+  mns:
+    address: http://1198583349505734.mns.cn-shanghai.aliyuncs.com
+  log:
+    endpoint: cn-shanghai-intranet.log.aliyuncs.com
+spring:
+  redis:
+    host: r-uf67zu1150j32w6ttu.redis.rds.aliyuncs.com

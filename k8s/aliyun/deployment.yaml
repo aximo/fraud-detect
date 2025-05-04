@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-detect
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fraud-detect
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: fraud-detect
+        version: 1.4.0
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: fraud-detect
+          image: registry-vpc.cn-shanghai.aliyuncs.com/hsbc-202505/fraud-detect:1.4.0
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: aliyun
+            - name: SPRING_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secret-conf
+                  key: SPRING_REDIS_PASSWORD
+            - name: ALI_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secret-conf
+                  key: ALI_KEY
+            - name: ALI_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: app-secret-conf
+                  key: ALI_SECRET
+      imagePullSecrets:
+        - name: gcr-pull-secret
