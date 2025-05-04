@@ -6,7 +6,7 @@
 
     <groupId>com.example.fraud</groupId>
     <artifactId>fraud-detector</artifactId>
-    <version>1.4.0</version>
+    <version>1.5.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>fraud-detector</name>
