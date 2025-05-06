@@ -1,38 +1,24 @@
 package com.shawn.fraud.api.restful;
 
-import com.aliyun.mns.model.Message;
-import com.aliyun.mns.model.MessagePropertyValue;
-import com.aliyun.mns.model.PropertyType;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.shawn.fraud.api.AbstractFraudDetectEndpoint;
 import com.shawn.fraud.api.FraudDetectRequest;
 import com.shawn.fraud.api.FraudDetectResponse;
+import com.shawn.fraud.application.CommandHandler;
 import com.shawn.fraud.application.detect.FraudDetectCommand;
-import com.shawn.fraud.application.detect.FraudDetectCommandHandler;
 import com.shawn.fraud.application.detect.FraudDetectCommandResult;
-import com.shawn.fraud.domain.SimpleMessageTemplate;
 import com.shawn.fraud.domain.config.FraudDetectProperties;
 import com.shawn.fraud.domain.model.Transaction;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.util.Collections;
-import java.util.Map;
 
 @RequestMapping("/api/transactions")
 @RestController
-public class FraudDetectRestful extends AbstractFraudDetectEndpoint {
-    private final SimpleMessageTemplate<Message> requestMessageTemplate;
-    private final ObjectMapper objectMapper;
+public class FraudDetectRestful{
 
-    public FraudDetectRestful(FraudDetectCommandHandler commandHandler,
-                              @Qualifier(SimpleMessageTemplate.MESSAGE_TEMPLATE_REQUEST)
-                              SimpleMessageTemplate<Message> requestMessageTemplate,
-                              ObjectMapper objectMapper) {
-        super(commandHandler);
-        this.requestMessageTemplate = requestMessageTemplate;
-        this.objectMapper = objectMapper;
+    private final CommandHandler<FraudDetectCommand, FraudDetectCommandResult> commandHandler;
+
+    public FraudDetectRestful(CommandHandler<FraudDetectCommand, FraudDetectCommandResult> commandHandler) {
+        this.commandHandler = commandHandler;
     }
 
 
@@ -54,22 +40,25 @@ public class FraudDetectRestful extends AbstractFraudDetectEndpoint {
      * it will send message to queue
      */
     @PostMapping("/fraud/detect/async")
-    public void detectAsync(
+    public FraudDetectResponse detectAsync(
             @RequestHeader(value = FraudDetectProperties.X_REQUEST_ID) String requestId,
-            @RequestBody FraudDetectRequest request) throws Exception {
-        Transaction transaction = new Transaction();
-        transaction.setId(request.getId());
-        transaction.setAge(request.getAge());
-        transaction.setCountry(request.getCountry());
-        transaction.setAmount(BigDecimal.valueOf(request.getAmount()));
+            @RequestBody FraudDetectRequest request) {
+        Transaction transaction = convert(request);
+        FraudDetectCommand command = new FraudDetectCommand(requestId, transaction, true);
+        commandHandler.execute(command);
+        return new FraudDetectResponse(true, null);
+    }
 
-        Message message = new Message(objectMapper.writeValueAsString(transaction));
-        message.setRequestId(requestId);
-        Map<String, MessagePropertyValue> userProperties = Collections.singletonMap(
-                FraudDetectProperties.X_REPLY_ASYNC,
-                new MessagePropertyValue(PropertyType.BOOLEAN, Boolean.TRUE.toString())
-        );
-        message.setUserProperties(userProperties);
-        requestMessageTemplate.send(requestId, message);
+    /**
+     * maybe exception happen as request body is invalid, just let the framework to show the error logs
+     * no necessary handle by our-self
+     */
+    private Transaction convert(FraudDetectRequest message) {
+        Transaction transaction = new Transaction();
+        transaction.setAge(message.getAge());
+        transaction.setId(message.getId());
+        transaction.setCountry(message.getCountry());
+        transaction.setAmount(new BigDecimal(message.getAmount()));
+        return transaction;
     }
 }

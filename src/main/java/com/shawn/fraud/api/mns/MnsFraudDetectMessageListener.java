@@ -1,18 +1,14 @@
 package com.shawn.fraud.api.mns;
 
 
-import com.aliyun.mns.model.Message;
-import com.aliyun.mns.model.MessagePropertyValue;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.shawn.fraud.api.AbstractFraudDetectEndpoint;
 import com.shawn.fraud.application.CommandHandler;
 import com.shawn.fraud.application.detect.FraudDetectCommand;
 import com.shawn.fraud.application.detect.FraudDetectCommandResult;
 import com.shawn.fraud.domain.SimpleMessageTemplate;
 import com.shawn.fraud.domain.config.FraudDetectProperties;
-import com.shawn.fraud.domain.model.Transaction;
+import com.shawn.fraud.domain.event.FraudDetectRequestEvent;
+import com.shawn.fraud.domain.model.MessageWrapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 
@@ -29,25 +25,21 @@ import static java.lang.Thread.sleep;
  */
 @Component
 @Slf4j
-public class MnsFraudDetectMessageListener extends AbstractFraudDetectEndpoint implements SmartLifecycle {
+public class MnsFraudDetectMessageListener implements SmartLifecycle {
+    private final SimpleMessageTemplate messageTemplate;
+    private final CommandHandler<FraudDetectCommand, FraudDetectCommandResult> commandHandler;
 
-    private final ObjectMapper objectMapper;
-    private final SimpleMessageTemplate<Message> requestMessageTemplate;
-    private final SimpleMessageTemplate<Message> dltMessageTemplate;
+    private final FraudDetectProperties fraudDetectProperties;
 
     public MnsFraudDetectMessageListener(CommandHandler<FraudDetectCommand, FraudDetectCommandResult> commandHandler,
-                                         @Qualifier(SimpleMessageTemplate.MESSAGE_TEMPLATE_REQUEST)
-                                         SimpleMessageTemplate<Message> requestMessageTemplate,
-                                         @Qualifier(SimpleMessageTemplate.MESSAGE_TEMPLATE_DLT)
-                                         SimpleMessageTemplate<Message> dltMessageTemplate,
-                                         ObjectMapper objectMapper) {
-        super(commandHandler);
-        this.objectMapper = objectMapper;
-        this.requestMessageTemplate = requestMessageTemplate;
-        this.dltMessageTemplate = dltMessageTemplate;
+                                         SimpleMessageTemplate messageTemplate,
+                                         FraudDetectProperties fraudDetectProperties) {
+        this.commandHandler = commandHandler;
+        this.messageTemplate = messageTemplate;
+        this.fraudDetectProperties = fraudDetectProperties;
     }
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> new Thread(runnable, "mns-pull-thread"));
     private volatile boolean running = false;
 
 
@@ -80,16 +72,16 @@ public class MnsFraudDetectMessageListener extends AbstractFraudDetectEndpoint i
 
     private void doPullingLoop() {
         while (running) {
-           doPulling();
+            doPulling();
         }
     }
 
     protected void doPulling() {
         try {
-            List<Message> messages = requestMessageTemplate.list();
-            log.info("there are {} messages found", messages.size());
-            for (Message message : messages) {
-                processMessage(message);
+            List<MessageWrapper<FraudDetectRequestEvent>> messages = messageTemplate.list(fraudDetectProperties.getRequestQueue(), FraudDetectRequestEvent.class);
+            log.info("there are {} events found in {}", messages.size(), fraudDetectProperties.getRequestQueue());
+            for (MessageWrapper<FraudDetectRequestEvent> message : messages) {
+                process(message);
             }
         } catch (Exception e) {
             log.error("fail to process the pulling action", e);
@@ -102,33 +94,28 @@ public class MnsFraudDetectMessageListener extends AbstractFraudDetectEndpoint i
         }
     }
 
-    private void processMessage(Message message) {
-        String requestId = message.getRequestId();
+    private void process(MessageWrapper<FraudDetectRequestEvent> message) {
+        String requestId = message.getPayload().getRequestId();
+        if (message.getPayload() == null) {
+            // maybe the message is in an ill format, can not decode, in this case, directly delete from source queue
+            messageTemplate.send(fraudDetectProperties.getDeadQueue(), message.getOriginContent());
+            log.info("move ill message to dlt queue {}", fraudDetectProperties.getDeadQueue());
+            messageTemplate.delete(fraudDetectProperties.getRequestQueue(), message.getReference());
+            log.info("direct remove ill message from source queue {}", fraudDetectProperties.getRequestQueue());
+
+            return;
+        }
         try {
-            Transaction transaction = objectMapper.readValue(message.getMessageBodyAsRawString(), Transaction.class);
-            MessagePropertyValue replyModel = message.getUserProperties().get(FraudDetectProperties.X_REPLY_ASYNC);
-            boolean replyAsync = replyModel != null && Boolean.parseBoolean(replyModel.getStringValue());
-            FraudDetectCommand command = new FraudDetectCommand(requestId, transaction, replyAsync);
+            FraudDetectCommand command = new FraudDetectCommand(requestId, message.getPayload().getTransaction(), false);
             commandHandler.execute(command);
         } catch (Exception exception) {
             log.warn("some exception happen on {}, resend it to dlt", requestId, exception);
-            sendToDLQ(message);
+            messageTemplate.send(fraudDetectProperties.getDeadQueue(), message.getPayload());
+            log.info("success send the message to dlt {} for {}", fraudDetectProperties.getDeadQueue(), message.getPayload().getRequestId());
         } finally {
-            deleteMessage(message);
+            messageTemplate.delete(fraudDetectProperties.getRequestQueue(), message.getReference());
+            log.info("remove the request message from {} for {}", fraudDetectProperties.getRequestQueue(), message.getPayload().getRequestId());
         }
-    }
-
-
-    private void deleteMessage(Message message){
-        requestMessageTemplate.delete(message);
-    }
-
-    private void sendToDLQ(Message message) {
-        Message dltMessage = new Message();
-        dltMessage.setMessageBodyAsRawString(message.getMessageBodyAsRawString());
-        dltMessage.setRequestId(message.getRequestId());
-        dltMessageTemplate.send(message.getRequestId(), message);
-        log.info("the message is send send dlt for {}", message.getRequestId());
     }
 
     /**

@@ -1,13 +1,11 @@
-package com.shawn.fraud.infrastructure;
+package com.shawn.fraud.infrastructure.mns;
 
 import com.aliyun.mns.client.MNSClient;
-import com.aliyun.mns.model.Message;
-import com.shawn.fraud.domain.SimpleMessageTemplate;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shawn.fraud.domain.config.FraudDetectProperties;
+import com.shawn.fraud.infrastructure.mns.MnsConfiguration;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
@@ -20,22 +18,9 @@ class MnsConfigurationTest {
     @Test
     void requestMessageTemplate() {
         assertDoesNotThrow(() -> {
-            mnsConfiguration.requestMessageTemplate(client, fraudDetectProperties);
+            mnsConfiguration.messageTemplate(client, fraudDetectProperties, new ObjectMapper());
         });
 
     }
 
-    @Test
-    void responseMessageTemplate() {
-        assertDoesNotThrow(() -> {
-            mnsConfiguration.responseMessageTemplate(client, fraudDetectProperties);
-        });
-    }
-
-    @Test
-    void dltMessageTemplate() {
-        assertDoesNotThrow(() -> {
-            mnsConfiguration.dltMessageTemplate(client, fraudDetectProperties);
-        });
-    }
 }

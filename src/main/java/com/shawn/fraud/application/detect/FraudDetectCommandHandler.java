@@ -5,7 +5,8 @@ import com.shawn.fraud.domain.FraudException;
 import com.shawn.fraud.domain.FraudService;
 import com.shawn.fraud.domain.LockTemplate;
 import com.shawn.fraud.domain.config.FraudDetectProperties;
-import com.shawn.fraud.domain.event.FraudDetectResultEvent;
+import com.shawn.fraud.domain.event.FraudDetectCompletedEvent;
+import com.shawn.fraud.domain.event.FraudDetectRequestEvent;
 import com.shawn.fraud.domain.model.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,6 +61,12 @@ public class FraudDetectCommandHandler implements CommandHandler<FraudDetectComm
 
     private FraudDetectCommandResult process(FraudDetectCommand command) {
         Assert.notNull(command.getTransaction(), () -> "the transaction should not be empty");
+        if (command.isAsync()) {
+            FraudDetectRequestEvent fraudDetectRequestEvent = new FraudDetectRequestEvent(command.getRequestId(), command.getTransaction());
+            applicationEventPublisher.publishEvent(fraudDetectRequestEvent);
+            return FraudDetectCommandResult.success();
+        }
+
         Transaction transaction = command.getTransaction();
         logger.info("will process the fraud detect command, transactionId={}, amount={}, age={}, countory={}", transaction.getId(), transaction.getAmount(), transaction.getAge(), transaction.getCountry());
         try {
@@ -81,11 +88,11 @@ public class FraudDetectCommandHandler implements CommandHandler<FraudDetectComm
      */
     private void postExecute(FraudDetectCommand command, FraudDetectCommandResult result) {
         redisTemplate.opsForValue().set(buildCacheKey(command), result, fraudDetectProperties.getTtl());
-        FraudDetectResultEvent event = new FraudDetectResultEvent(
-                command.isAsync(),
-                command.getTransaction(),
+        FraudDetectCompletedEvent event = new FraudDetectCompletedEvent(
                 result.isSuccess(),
-                result.getError());
+                result.getError(),
+                command.getRequestId(),
+                command.getTransaction().getId());
         applicationEventPublisher.publishEvent(event);
     }
 }
